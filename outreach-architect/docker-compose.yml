@@ -1,0 +1,105 @@
+version: '3.8'
+
+services:
+  # Main application
+  app:
+    build: .
+    container_name: outreach-architect
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:outreach_password@db:5432/outreach_db
+      - REDIS_URL=redis://redis:6379/0
+      - KIMI_API_KEY=${KIMI_API_KEY}
+      - SENDGRID_API_KEY=${SENDGRID_API_KEY}
+      - FROM_EMAIL=${FROM_EMAIL}
+      - FROM_NAME=${FROM_NAME}
+      - NEWSAPI_KEY=${NEWSAPI_KEY}
+      - ENVIRONMENT=production
+      - LOG_LEVEL=INFO
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - outreach-network
+
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    container_name: outreach-db
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=outreach_password
+      - POSTGRES_DB=outreach_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - outreach-network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: outreach-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - outreach-network
+
+  # Celery Worker (for background tasks)
+  celery:
+    build: .
+    container_name: outreach-celery
+    command: celery -A celery_app worker --loglevel=info
+    environment:
+      - DATABASE_URL=postgresql://postgres:outreach_password@db:5432/outreach_db
+      - REDIS_URL=redis://redis:6379/0
+      - KIMI_API_KEY=${KIMI_API_KEY}
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - outreach-network
+
+  # pgAdmin (optional - for database management)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: outreach-pgadmin
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@outreach.com
+      - PGADMIN_DEFAULT_PASSWORD=admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - db
+    restart: unless-stopped
+    networks:
+      - outreach-network
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  outreach-network:
+    driver: bridge

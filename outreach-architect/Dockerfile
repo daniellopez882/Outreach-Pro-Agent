@@ -52,6 +52,13 @@ COPY --chown=outreach:outreach . .
 
 RUN mkdir -p /app/logs /app/data && chown -R outreach:outreach /app/logs /app/data
 
+# /app is created by WORKDIR and owned by root, so the non-root user cannot
+# create files directly in it. The SQLite default resolves to the repo
+# directory, which meant the container died at startup with
+# "sqlite3.OperationalError: unable to open database file". /app/data is the
+# writable path, and is where a volume should be mounted.
+ENV DATABASE_URL=sqlite:////app/data/outreach.db
+
 USER outreach
 
 EXPOSE 8000

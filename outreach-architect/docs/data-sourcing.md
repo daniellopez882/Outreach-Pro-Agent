@@ -80,17 +80,16 @@ Subclass `EnrichmentProvider`, keep `terms_compliant = True`, and register it:
 from enrichment.base import EnrichmentProvider, EnrichmentResult
 from enrichment.registry import register
 
+
 @register
 class ProxycurlProvider(EnrichmentProvider):
     name = "proxycurl"
     requires_credentials = True
     terms_compliant = True
 
-    async def enrich_person(self, identifier, **context) -> EnrichmentResult:
-        ...
+    async def enrich_person(self, identifier, **context) -> EnrichmentResult: ...
 
-    async def enrich_company(self, identifier, **context) -> EnrichmentResult:
-        ...
+    async def enrich_company(self, identifier, **context) -> EnrichmentResult: ...
 ```
 
 Then add it to `ENRICHMENT_PROVIDERS`, which is an ordered list:

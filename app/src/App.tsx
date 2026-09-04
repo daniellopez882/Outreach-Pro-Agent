@@ -1,3 +1,4 @@
+import type { LucideIcon } from "lucide-react";
 import { useEffect, useState, useRef } from 'react';
 import {
   Mail, Linkedin, TrendingUp, Zap, CheckCircle,
@@ -11,7 +12,6 @@ import { Badge } from '@/components/ui/badge';
 import { LiveAgentDemo } from '@/components/LiveAgentDemo';
 import { Dashboard } from '@/components/Dashboard';
 
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 // Animated counter hook
 function useCountUp(end: number, duration: number = 2000) {
@@ -64,7 +64,7 @@ function StatCard({ value, suffix, label, icon: Icon, delay }: {
   value: number;
   suffix: string;
   label: string;
-  icon: any;
+  icon: LucideIcon;
   delay: number;
 }) {
   const { count, elementRef } = useCountUp(value);
@@ -90,7 +90,7 @@ function StatCard({ value, suffix, label, icon: Icon, delay }: {
 
 // Feature Card Component
 function FeatureCard({ icon: Icon, title, description, color }: {
-  icon: any;
+  icon: LucideIcon;
   title: string;
   description: string;
   color: string;
@@ -113,7 +113,7 @@ function StepCard({ number, title, description, icon: Icon }: {
   number: number;
   title: string;
   description: string;
-  icon: any;
+  icon: LucideIcon;
 }) {
   return (
     <div className="relative">

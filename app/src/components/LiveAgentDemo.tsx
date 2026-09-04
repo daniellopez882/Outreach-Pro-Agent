@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-    Send, Sparkles, Loader2, CheckCircle, AlertCircle,
+    Sparkles, Loader2, AlertCircle,
     Brain, Mail, Building2, User
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -97,8 +97,9 @@ export function LiveAgentDemo() {
                 throw new Error('No campaign generated');
             }
 
-        } catch (err: any) {
-            setError(err.message);
+        } catch (err) {
+            // `catch (err: any)` defeats the type checker; narrow instead.
+            setError(err instanceof Error ? err.message : String(err));
             setStage('idle');
         } finally {
             setLoading(false);

@@ -131,11 +131,19 @@ DATABASE_URL=postgresql://user:password@localhost:5432/outreach_db
 SENDGRID_API_KEY=your_sendgrid_key
 FROM_EMAIL=your@email.com
 
-# Optional but recommended
+# Required on every endpoint except /health and /ready
+API_KEY=generate_with_secrets_token_urlsafe_32
+
+# Optional
 NEWSAPI_KEY=your_newsapi_key  # For company intelligence
-LINKEDIN_EMAIL=your_linkedin_email  # For enhanced scraping
-LINKEDIN_PASSWORD=your_linkedin_password
+
+# Sending is opt-in; see docs/data-sourcing.md before enabling it
+EMAIL_SENDING_ENABLED=false
 ```
+
+LinkedIn credentials are no longer a setting. The scraper that used them was
+removed for being non-functional and a terms-of-service breach; enrichment is
+now a provider interface. See [docs/data-sourcing.md](docs/data-sourcing.md).
 
 ---
 

@@ -47,9 +47,15 @@ jobs:
       - name: No credential-scraping settings may return
         # The LinkedIn scraper was removed for being both non-functional and a
         # terms-of-service breach. This fails the build if it comes back.
+        #
+        # Matches a *definition*, not a mention: an uncommented environment
+        # assignment or a Python field. An earlier, broader pattern flagged the
+        # documentation that explains the removal.
         run: |
-          if grep -rIl --exclude-dir=.venv --exclude-dir=docs \
-               -e 'LINKEDIN_PASSWORD' -e 'linkedin_password' . ; then
+          hits=$(grep -rIn --exclude-dir=.venv --exclude-dir=node_modules \
+                   -E '^[^#]*(LINKEDIN_PASSWORD=|linkedin_password[[:space:]]*[:=])' . || true)
+          if [ -n "$hits" ]; then
+            echo "$hits"
             echo "::error::LinkedIn credential settings reintroduced; see docs/data-sourcing.md"
             exit 1
           fi

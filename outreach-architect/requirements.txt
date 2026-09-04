@@ -1,8 +1,13 @@
 # Core Dependencies
 fastapi==0.109.0
 uvicorn[standard]==0.27.0
-pydantic==2.5.3
-pydantic-settings==2.1.0
+# [email] pulls email-validator, which pydantic.EmailStr requires. main.py uses
+# EmailStr, so without it the app fails at import -- it worked locally only
+# because the package happened to be present in the dev virtualenv.
+pydantic[email]>=2.7,<3.0
+# NoDecode (used in config.py) needs >=2.6. The previous pin of 2.1.0 predates
+# it, so the container failed at import while a fresh local venv worked.
+pydantic-settings>=2.6,<3.0
 
 # Database
 sqlalchemy==2.0.25

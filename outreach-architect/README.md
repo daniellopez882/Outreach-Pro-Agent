@@ -1,8 +1,13 @@
 # Outreach Architect Pro — Backend 🎯
 
-**Hyper-Personalized Cold Outreach Agent powered by Kimi 2.5**
+> **Note.** This file previously published a table of open, response and
+> meeting rates, and claimed the system "achieves 15-20% response rates".
+> Nothing in this repository measures any of that and no campaign has been
+> run with it. See the root README and docs/data-sourcing.md.
 
-> "Generic spam emails get 1% response rates. OutreachPro makes it 15-20%."
+
+
+**Hyper-Personalized Cold Outreach Agent powered by Kimi 2.5**
 
 ## 🌟 Overview
 
@@ -18,7 +23,6 @@ An intelligent agent that:
 1. **Deeply analyzes** each lead (LinkedIn profile, company news, recent activity)
 2. **Identifies** pain points, interests, and trigger events
 3. **Generates** truly personalized emails (not templates)
-4. **Achieves** 15-20% response rates through intelligent personalization
 
 ---
 
@@ -158,7 +162,7 @@ lead_data = {
     "email": "rahul@company.com",
     "company": "TechCorp",
     "job_title": "VP Engineering",
-    "linkedin_url": "https://linkedin.com/in/rahul"
+    "linkedin_url": "https://linkedin.com/in/rahul",
 }
 
 response = httpx.post("http://localhost:8000/leads", json=lead_data)
@@ -166,10 +170,10 @@ lead = response.json()
 
 # 2. Generate personalized campaign
 campaign_request = {
-    "lead_ids": [lead['id']],
+    "lead_ids": [lead["id"]],
     "company_context": "We help engineering teams ship faster",
     "value_proposition": "Reduce deployment time by 60%",
-    "auto_send": False  # Review before sending
+    "auto_send": False,  # Review before sending
 }
 
 response = httpx.post("http://localhost:8000/campaigns", json=campaign_request)
@@ -190,7 +194,7 @@ result = await orchestrator.process_lead(
     lead=lead_object,
     company_context="Your company background",
     value_proposition="What you're offering",
-    auto_send=False
+    auto_send=False,
 )
 
 print(result)
@@ -224,29 +228,25 @@ The system doesn't just scrape data - it **understands** it:
 ```python
 # Kimi analyzes and extracts:
 {
-  "pain_points": [
-    "Struggling with deployment velocity as team scales",
-    "Recent GitHub issues show CI/CD bottlenecks"
-  ],
-  "interests": [
-    "DevOps automation",
-    "Engineering productivity",
-    "Modern development workflows"
-  ],
-  "trigger_events": [
-    {
-      "type": "hiring_surge",
-      "description": "15+ engineering positions posted",
-      "timestamp": "2024-02-01",
-      "relevance": 0.9
-    }
-  ],
-  "personalization_hooks": [
-    "Recent LinkedIn post about scaling challenges",
-    "Company announced Series B funding",
-    "Mentioned in TechCrunch article about growth"
-  ],
-  "relevance_score": 0.85
+    "pain_points": [
+        "Struggling with deployment velocity as team scales",
+        "Recent GitHub issues show CI/CD bottlenecks",
+    ],
+    "interests": ["DevOps automation", "Engineering productivity", "Modern development workflows"],
+    "trigger_events": [
+        {
+            "type": "hiring_surge",
+            "description": "15+ engineering positions posted",
+            "timestamp": "2024-02-01",
+            "relevance": 0.9,
+        }
+    ],
+    "personalization_hooks": [
+        "Recent LinkedIn post about scaling challenges",
+        "Company announced Series B funding",
+        "Mentioned in TechCrunch article about growth",
+    ],
+    "relevance_score": 0.85,
 }
 ```
 
@@ -288,16 +288,16 @@ Every email is scored before sending:
 
 ```python
 {
-  "quality_score": 0.85,
-  "passes_qa": True,
-  "checks": {
-    "personalization_elements": 4,  # Need 3+
-    "word_count": 127,              # Ideal: 50-200
-    "has_clear_cta": True,
-    "no_spam_phrases": True,
-    "relevance_score": 0.85
-  },
-  "issues": []
+    "quality_score": 0.85,
+    "passes_qa": True,
+    "checks": {
+        "personalization_elements": 4,  # Need 3+
+        "word_count": 127,  # Ideal: 50-200
+        "has_clear_cta": True,
+        "no_spam_phrases": True,
+        "relevance_score": 0.85,
+    },
+    "issues": [],
 }
 ```
 
@@ -307,9 +307,7 @@ Generate multiple variants with different approaches:
 
 ```python
 variants = await kimi_agent.generate_ab_variants(
-    original_email=email,
-    lead_data=lead_data,
-    num_variants=2
+    original_email=email, lead_data=lead_data, num_variants=2
 )
 
 # Variant A: Problem-Agitation
@@ -342,9 +340,7 @@ Based on following best practices and using this system:
 
 | Metric | Generic Emails | This System |
 |--------|---------------|-------------|
-| Open Rate | 15-20% | 35-45% |
-| Response Rate | 0.5-1% | **15-20%** |
-| Meeting Booked | 0.1-0.3% | 5-8% |
+
 | Time per Email | 2-3 min | 30 sec |
 
 **Key Success Factors:**
@@ -372,7 +368,7 @@ response = self._call_kimi(messages, temperature=0.5)
 SYSTEM_PROMPTS = {
     "tech": "You write to CTOs and engineering leaders...",
     "finance": "You write to CFOs and finance executives...",
-    "marketing": "You write to CMOs and marketing leaders..."
+    "marketing": "You write to CMOs and marketing leaders...",
 }
 ```
 
@@ -383,17 +379,14 @@ Add your own data sources to `company_intelligence.py`:
 ```python
 async def get_custom_signals(self, company_name: str):
     """Add your proprietary data sources"""
-    
+
     # Example: Internal CRM data
     crm_data = await fetch_from_crm(company_name)
-    
+
     # Example: Industry-specific databases
     industry_data = await fetch_industry_data(company_name)
-    
-    return {
-        'crm_insights': crm_data,
-        'industry_position': industry_data
-    }
+
+    return {"crm_insights": crm_data, "industry_position": industry_data}
 ```
 
 ### Batch Processing Optimization
@@ -405,7 +398,7 @@ results = await orchestrator.batch_process_leads(
     company_context=context,
     value_proposition=value_prop,
     auto_send=True,  # Auto-send if quality >= 0.8
-    max_concurrent=10  # Control rate limiting
+    max_concurrent=10,  # Control rate limiting
 )
 ```
 
@@ -425,7 +418,7 @@ Response:
   "sent_campaigns": 750,
   "replied_campaigns": 135,
   "response_rate": 18.0,
-  "target_response_rate": "15-20%"
+
 }
 ```
 

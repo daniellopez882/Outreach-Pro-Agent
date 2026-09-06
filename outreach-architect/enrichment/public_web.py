@@ -23,7 +23,7 @@ import ipaddress
 import socket
 import time
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 from urllib.robotparser import RobotFileParser
 
 import httpx
@@ -51,6 +51,8 @@ BLOCKED_HOSTS = frozenset(
 
 MIN_SECONDS_BETWEEN_REQUESTS = 2.0
 MAX_BYTES = 512_000
+# Redirect hops followed by hand, each re-checked against the same rules.
+MAX_REDIRECTS = 3
 REQUEST_TIMEOUT = 15.0
 
 
@@ -87,7 +89,8 @@ class PublicWebProvider(EnrichmentProvider):
         if self._client is None:
             self._client = httpx.AsyncClient(
                 timeout=REQUEST_TIMEOUT,
-                follow_redirects=True,
+                # Redirects are followed in _fetch, one checked hop at a time.
+                follow_redirects=False,
                 headers={"User-Agent": USER_AGENT, "Accept-Language": "en-US,en;q=0.9"},
             )
         return self._client
@@ -128,36 +131,61 @@ class PublicWebProvider(EnrichmentProvider):
                 await asyncio.sleep(MIN_SECONDS_BETWEEN_REQUESTS - elapsed)
         self._last_request[host] = time.monotonic()
 
-    async def _fetch(self, url: str) -> tuple[str | None, str | None]:
-        """Return (html, error)."""
+    @staticmethod
+    def _refuse(url: str) -> str | None:
+        """Why this URL must not be fetched, or None if it may be."""
         parsed = urlparse(url)
         if parsed.scheme not in ("http", "https"):
-            return None, f"unsupported scheme: {parsed.scheme or '(none)'}"
-
+            return f"unsupported scheme: {parsed.scheme or '(none)'}"
         host = parsed.hostname or ""
         if host.lower() in BLOCKED_HOSTS:
-            return None, (
+            return (
                 f"{host} forbids automated collection in its terms of service; "
                 "use a licensed provider instead"
             )
         if not _is_public_address(host):
-            return None, f"refusing to fetch a non-public address: {host}"
-        if not await self._robots_allow(url):
-            return None, f"robots.txt disallows fetching {url}"
+            return f"refusing to fetch a non-public address: {host}"
+        return None
 
-        await self._throttle(host)
-        try:
-            client = await self._get_client()
-            response = await client.get(url)
-            response.raise_for_status()
-        except httpx.HTTPError as exc:
-            return None, f"fetch failed: {exc}"
+    async def _fetch(self, url: str) -> tuple[str | None, str | None]:
+        """
+        Return (html, error).
 
-        content_type = response.headers.get("content-type", "")
-        if "html" not in content_type:
-            return None, f"not an HTML document: {content_type or 'unknown'}"
+        Redirects are followed by hand so that every hop is checked against
+        the same rules as the URL the lead supplied. With
+        ``follow_redirects=True`` the client followed a public site's redirect
+        wherever it pointed -- ``http://169.254.169.254/`` included -- because
+        the address check ran once, before the first request, and never again.
+        """
+        for _hop in range(MAX_REDIRECTS + 1):
+            refused = self._refuse(url)
+            if refused:
+                return None, refused
+            if not await self._robots_allow(url):
+                return None, f"robots.txt disallows fetching {url}"
 
-        return response.text[:MAX_BYTES], None
+            await self._throttle(urlparse(url).hostname or "")
+            try:
+                client = await self._get_client()
+                response = await client.get(url)
+            except httpx.HTTPError as exc:
+                return None, f"fetch failed: {exc}"
+
+            if response.is_redirect:
+                location = response.headers.get("location")
+                if not location:
+                    return None, f"redirect without a location from {url}"
+                url = urljoin(url, location)
+                continue
+            if response.is_error:
+                return None, f"fetch failed: HTTP {response.status_code} for {url}"
+
+            content_type = response.headers.get("content-type", "")
+            if "html" not in content_type:
+                return None, f"not an HTML document: {content_type or 'unknown'}"
+            return response.text[:MAX_BYTES], None
+
+        return None, f"more than {MAX_REDIRECTS} redirects from the supplied URL"
 
     @staticmethod
     def _extract(html: str) -> dict[str, Any]:

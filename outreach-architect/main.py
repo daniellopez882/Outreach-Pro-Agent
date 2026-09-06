@@ -13,11 +13,12 @@ from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
 from loguru import logger
-from pydantic import BaseModel, EmailStr, HttpUrl
+from pydantic import BaseModel, EmailStr, Field, HttpUrl
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from config import settings
+from config import SendingDisabled, SendingNotConfigured, settings
+from mailer import DeliveryFailed
 from models import Base, Lead, OutreachCampaign, OutreachStatus
 
 
@@ -137,8 +138,13 @@ class LeadResponse(BaseModel):
         from_attributes = True
 
 
+# Each lead costs several model calls. An authenticated caller could previously
+# submit an unbounded list and run up the provider bill in one request.
+MAX_LEADS_PER_REQUEST = 100
+
+
 class CampaignRequest(BaseModel):
-    lead_ids: list[int]
+    lead_ids: list[int] = Field(min_length=1, max_length=MAX_LEADS_PER_REQUEST)
     company_context: str
     value_proposition: str
     auto_send: bool = False
@@ -378,9 +384,25 @@ async def send_campaign(campaign_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Campaign already sent")
 
     orchestrator = _get_orchestrator(db)
-    result = await orchestrator._send_email(campaign)
+    try:
+        result = await orchestrator.send_campaign_email(campaign)
+    except SendingDisabled as exc:
+        # The request is well-formed and authorised; this deployment has
+        # delivery switched off. Turning it on is an operator decision.
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except SendingNotConfigured as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
+    except DeliveryFailed as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
-    return {"status": "sent", "campaign_id": campaign_id, "sent_at": result["sent_at"]}
+    return {
+        "status": "sent",
+        "campaign_id": campaign_id,
+        "sent_at": result["sent_at"],
+        "message_id": result.get("message_id"),
+    }
 
 
 @app.get("/analytics/stats", dependencies=[Depends(require_api_key)])
@@ -407,8 +429,9 @@ async def get_analytics(db: Session = Depends(get_db)):
         "total_campaigns": total_campaigns,
         "sent_campaigns": sent_campaigns,
         "replied_campaigns": replied_campaigns,
+        # "target_response_rate": "15-20%" used to be served here. Nothing in
+        # this repository measured it; it was a marketing figure in an API.
         "response_rate": round(response_rate, 2),
-        "target_response_rate": "15-20%",
     }
 
 

@@ -9,9 +9,10 @@ from typing import Any
 from loguru import logger
 
 from company_intelligence import company_intel
-from config import settings
+from config import SendingDisabled, SendingNotConfigured, settings
 from enrichment import EnrichmentResult, get_provider
 from kimi_agent import kimi_agent
+from mailer import DeliveryFailed, deliver
 from models import Lead, OutreachCampaign, OutreachStatus
 
 
@@ -111,9 +112,25 @@ class OutreachOrchestrator:
             # Stage 6: Auto-send if enabled and quality is high
             if auto_send and quality_check["quality_score"] >= 0.8:
                 logger.info("Stage 6: Auto-sending (quality score >= 0.8)")
-                send_result = await self._send_email(campaign)
-                result["stages"]["send"] = send_result
-                result["status"] = "sent" if send_result["success"] else "send_failed"
+                try:
+                    send_result = await self.send_campaign_email(campaign)
+                except (SendingDisabled, SendingNotConfigured) as exc:
+                    # Not a failure: this deployment has delivery switched off
+                    # or unconfigured. The draft is kept for review and the
+                    # caller is told why nothing went out.
+                    logger.warning(f"Auto-send skipped for campaign {campaign.id}: {exc}")
+                    result["stages"]["send"] = {
+                        "success": False,
+                        "skipped": True,
+                        "reason": str(exc),
+                    }
+                    result["status"] = "pending_review"
+                except DeliveryFailed as exc:
+                    result["stages"]["send"] = {"success": False, "error": str(exc)}
+                    result["status"] = "send_failed"
+                else:
+                    result["stages"]["send"] = send_result
+                    result["status"] = "sent"
             else:
                 result["status"] = "pending_review"
 
@@ -338,11 +355,12 @@ class OutreachOrchestrator:
             subject_line=email["subject_line"],
             email_body=email["email_body"],
             personalization_elements=email.get("personalization_elements", []),
-            model_used=settings.kimi_model,
+            model_used=email.get("generated_by", settings.kimi_model),
             generation_metadata={
                 "analysis": analysis,
                 "quality_check": quality_check,
-                "expected_response_rate": email.get("expected_response_rate"),
+                # The model's own guess at a response rate used to be stored
+                # here. Nothing measures one; it was an invented number.
             },
             status=OutreachStatus.READY,
         )
@@ -354,24 +372,24 @@ class OutreachOrchestrator:
         logger.info(f"Created campaign {campaign.id} for lead {lead.name}")
         return campaign
 
-    async def _send_email(self, campaign: OutreachCampaign) -> dict[str, Any]:
+    async def send_campaign_email(self, campaign: OutreachCampaign) -> dict[str, Any]:
         """
-        Send the email (placeholder - implement with SendGrid)
+        Deliver a drafted campaign through the configured mail provider.
+
+        Raises SendingDisabled, SendingNotConfigured or DeliveryFailed. The
+        campaign is marked SENT only after the provider accepted the message.
+
+        The previous implementation logged the message, set the status to SENT
+        and returned success -- without checking EMAIL_SENDING_ENABLED and
+        without contacting any provider.
         """
+        receipt = await deliver(campaign)
 
-        # This is where you'd integrate with SendGrid or other email service
-        # For now, just log it
-
-        logger.info(f"SENDING EMAIL to {campaign.lead.email}")
-        logger.info(f"Subject: {campaign.subject_line}")
-        logger.info(f"Body:\n{campaign.email_body}")
-
-        # Update campaign status
         campaign.status = OutreachStatus.SENT
         campaign.sent_at = datetime.now(UTC)
         self.db.commit()
 
-        return {"success": True, "sent_at": campaign.sent_at.isoformat()}
+        return {"success": True, "sent_at": campaign.sent_at.isoformat(), **receipt}
 
     async def batch_process_leads(
         self,

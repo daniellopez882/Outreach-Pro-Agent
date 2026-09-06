@@ -25,15 +25,35 @@ class KimiAgent:
     def __init__(self):
         # Prioritize DeepSeek if available, otherwise fallback to Kimi
         if settings.deepseek_api_key:
-            logger.info("Initializing Agent with DeepSeek engine")
-            self.client = OpenAI(
-                api_key=settings.deepseek_api_key, base_url=settings.deepseek_base_url
-            )
+            self.engine = "deepseek"
+            self._api_key = settings.deepseek_api_key
+            self._base_url = settings.deepseek_base_url
             self.model = settings.deepseek_model
         else:
-            logger.info("Initializing Agent with Kimi engine")
-            self.client = OpenAI(api_key=settings.kimi_api_key, base_url=settings.kimi_base_url)
+            self.engine = "kimi"
+            self._api_key = settings.kimi_api_key
+            self._base_url = settings.kimi_base_url
             self.model = settings.kimi_model
+        logger.info(f"Agent configured for the {self.engine} engine ({self.model})")
+
+        # Built on first use. ``OpenAI(api_key=None)`` raises at construction,
+        # and this object is created at import time, so importing this module
+        # -- and everything that imports it, including the orchestrator behind
+        # POST /campaigns and POST /campaigns/{id}/send -- failed on any machine
+        # without a key. That made the documented no-key fallback to canned
+        # responses unreachable.
+        self._client: OpenAI | None = None
+
+    @property
+    def client(self) -> OpenAI:
+        """The provider client; needs a key, so it is only built when one exists."""
+        if self._client is None:
+            if not self._api_key:
+                raise RuntimeError(
+                    "No LLM API key configured. Set DEEPSEEK_API_KEY or KIMI_API_KEY."
+                )
+            self._client = OpenAI(api_key=self._api_key, base_url=self._base_url)
+        return self._client
 
     def _call_kimi(
         self,
@@ -146,6 +166,9 @@ class KimiAgent:
             "content": content,
             "tool_calls": None,
             "usage": {"prompt_tokens": 100, "completion_tokens": 150, "total_tokens": 250},
+            # Consumers copy this into their output as generated_by='canned',
+            # so a canned draft is never mistaken for one the model wrote.
+            "mock": True,
         }
 
     async def analyze_lead_profile(self, lead_data: dict[str, Any]) -> dict[str, Any]:
@@ -202,6 +225,8 @@ Return your analysis as a structured JSON with these exact keys:
                 content = content.split("```")[1].split("```")[0].strip()
 
             analysis = json.loads(content)
+
+            analysis["generated_by"] = "canned" if response.get("mock") else self.model
             logger.info(
                 f"Lead analysis complete. Relevance score: {analysis.get('relevance_score', 0)}"
             )
@@ -298,6 +323,8 @@ Return JSON:
                 content = content.split("```")[1].split("```")[0].strip()
 
             email_data = json.loads(content)
+
+            email_data["generated_by"] = "canned" if response.get("mock") else self.model
             logger.info(
                 f"Email generated. Expected response rate: {email_data.get('expected_response_rate')}"
             )

@@ -30,6 +30,14 @@ BASE_DIR = Path(__file__).resolve().parent
 INSECURE_API_KEY = "changeme-in-production"
 
 
+class SendingDisabled(RuntimeError):
+    """Delivery was requested while EMAIL_SENDING_ENABLED is false."""
+
+
+class SendingNotConfigured(RuntimeError):
+    """Delivery is enabled but the SendGrid settings are incomplete."""
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore"
@@ -141,18 +149,25 @@ class Settings(BaseSettings):
             )
 
     def require_email_credentials(self) -> None:
-        """Called before any send. Sending is irreversible."""
+        """
+        Called before any send. Sending is irreversible.
+
+        Raises typed errors so the API can answer 409 (switched off) or 503
+        (switched on but unconfigured) instead of a generic 500.
+        """
         if not self.email_sending_enabled:
-            raise RuntimeError(
+            raise SendingDisabled(
                 "Email sending is disabled. Set EMAIL_SENDING_ENABLED=true to deliver mail."
             )
         missing = [
-            name
+            name.upper()
             for name in ("sendgrid_api_key", "from_email", "from_name")
             if not getattr(self, name)
         ]
         if missing:
-            raise RuntimeError(f"Email is enabled but these are unset: {missing}")
+            raise SendingNotConfigured(
+                f"Email sending is enabled but these settings are unset: {', '.join(missing)}"
+            )
 
     def validate_production_settings(self) -> None:
         problems: list[str] = []

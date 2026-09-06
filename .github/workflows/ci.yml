@@ -44,6 +44,15 @@ jobs:
           API_KEY: ci-test-key-not-real
         run: pytest --cov=. --cov-report=term-missing
 
+      - name: Dependency audit
+        # 18 known advisories sat in five pinned packages before the follow-up;
+        # the pins are exact, so a new advisory needs a deliberate bump and
+        # this step is what asks for it.
+        run: pip-audit -r requirements.txt --progress-spinner off
+
+      - name: Static security scan
+        run: bandit -q -r . -x ./tests -ll
+
       - name: No credential-scraping settings may return
         # The LinkedIn scraper was removed for being both non-functional and a
         # terms-of-service breach. This fails the build if it comes back.
@@ -115,6 +124,17 @@ jobs:
           code=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://localhost:8000/campaigns/1/send)
           echo "unauthenticated POST /campaigns/1/send -> $code"
           [ "$code" = "401" ] || { echo "::error::send endpoint is not protected"; exit 1; }
+
+      - name: Delivery is off unless switched on
+        # /ready needs no key and reports the deployment's posture. The
+        # container was started without EMAIL_SENDING_ENABLED, so it must say so.
+        run: |
+          curl -s http://localhost:8000/ready | python3 -c '
+          import json, sys
+          enabled = json.load(sys.stdin)["checks"]["email_sending"]["enabled"]
+          print("email_sending.enabled =", enabled)
+          sys.exit(0 if enabled is False else 1)
+          '
 
       - name: Image does not run as root
         run: |

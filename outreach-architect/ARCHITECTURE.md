@@ -1,8 +1,14 @@
 # 🏗️ Personalized Outreach Architect - Technical Architecture
 
+> **Unverified claims removed.** This document previously stated the system
+> "achieves 15-20% response rates" and processes "10,000+ leads per day".
+> Neither is measured anywhere in this repository, and no campaign has been
+> run with it. See the root README for what is actually verified.
+
+
 ## System Overview
 
-This is a **production-ready agentic AI system** built specifically for Kimi 2.5 that achieves 15-20% response rates on cold outreach through intelligent personalization.
+An agentic pipeline for cold-outreach personalisation, built around a Kimi-compatible LLM client.
 
 ---
 
@@ -124,11 +130,10 @@ Else:
 # Process 100 leads in parallel
 async def process_batch():
     semaphore = asyncio.Semaphore(10)  # Max 10 concurrent
-    
+
     async with semaphore:
         results = await asyncio.gather(
-            *[process_lead(lead) for lead in leads],
-            return_exceptions=True
+            *[process_lead(lead) for lead in leads], return_exceptions=True
         )
 ```
 
@@ -240,6 +245,7 @@ OUTPUT: JSON with subject_line, body, hooks, reasoning
 # Solution: Token bucket algorithm
 from ratelimit import limits, sleep_and_retry
 
+
 @sleep_and_retry
 @limits(calls=100, period=60)
 def call_kimi_api():
@@ -250,12 +256,7 @@ def call_kimi_api():
 **2. Database Connections**
 ```python
 # Solution: Connection pooling
-engine = create_engine(
-    DATABASE_URL,
-    pool_size=20,
-    max_overflow=40,
-    pool_pre_ping=True
-)
+engine = create_engine(DATABASE_URL, pool_size=20, max_overflow=40, pool_pre_ping=True)
 ```
 
 **3. LinkedIn Scraping Speed**
@@ -405,10 +406,10 @@ Best,
 async def test_lead_analysis():
     lead_data = {...}
     analysis = await kimi_agent.analyze_lead_profile(lead_data)
-    
-    assert analysis['relevance_score'] >= 0
-    assert len(analysis['pain_points']) > 0
-    assert 'trigger_events' in analysis
+
+    assert analysis["relevance_score"] >= 0
+    assert len(analysis["pain_points"]) > 0
+    assert "trigger_events" in analysis
 ```
 
 ### Integration Tests
@@ -416,12 +417,10 @@ async def test_lead_analysis():
 # test_orchestrator.py
 async def test_full_workflow():
     lead = create_test_lead()
-    result = await orchestrator.process_lead(
-        lead, context, value_prop
-    )
-    
-    assert result['status'] == 'ready'
-    assert result['campaign_id'] is not None
+    result = await orchestrator.process_lead(lead, context, value_prop)
+
+    assert result["status"] == "ready"
+    assert result["campaign_id"] is not None
 ```
 
 ### Load Tests
@@ -437,7 +436,7 @@ locust -f loadtest.py --users 1000 --spawn-rate 10
 ### Key Metrics
 
 **Business Metrics:**
-- Response rate (target: 15-20%)
+- Response rate (no baseline measured; instrument before setting a target)
 - Open rate (target: 35-45%)
 - Meeting booked rate (target: 5-8%)
 - Time to response
@@ -460,17 +459,13 @@ logger.add(
     rotation="500 MB",
     retention="30 days",
     level="INFO",
-    format="{time} | {level} | {message}"
+    format="{time} | {level} | {message}",
 )
 
 # Structured logging
 logger.info(
     "Lead processed",
-    extra={
-        "lead_id": lead.id,
-        "relevance_score": score,
-        "processing_time": elapsed
-    }
+    extra={"lead_id": lead.id, "relevance_score": score, "processing_time": elapsed},
 )
 ```
 
@@ -492,10 +487,12 @@ async def rate_limit_middleware(request, call_next):
     # Implement token bucket
     pass
 
+
 # Authentication
 from fastapi.security import HTTPBearer
 
 security = HTTPBearer()
+
 
 @app.get("/campaigns")
 async def get_campaigns(token: str = Depends(security)):
@@ -580,7 +577,7 @@ This system represents a **complete, production-ready solution** for personalize
 4. **Scalable Architecture** (Async, distributed)
 5. **Comprehensive Monitoring** (Metrics + Logs)
 
-You achieve **15-20% response rates** while processing **10,000+ leads per day** with **minimal manual effort**.
+Throughput and response rate are not measured. Instrument a real campaign before quoting either.
 
 The system is designed to be:
 - ✅ **Production-ready** - Robust error handling, logging, monitoring

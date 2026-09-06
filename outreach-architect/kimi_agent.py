@@ -1,11 +1,12 @@
 """
 Kimi 2.5 AI Client - Agentic wrapper for intelligent outreach generation
 """
-from typing import List, Dict, Any, Optional
-from openai import OpenAI
-from loguru import logger
-from tenacity import retry, stop_after_attempt, wait_exponential
+
 import json
+from typing import Any
+
+from loguru import logger
+from openai import OpenAI
 
 from config import settings
 
@@ -13,75 +14,91 @@ from config import settings
 class KimiAgent:
     """
     Kimi 2.5 Agent for hyper-personalized outreach
-    
+
     Kimi 2.5 is optimized for:
     - Long context (128k tokens)
     - Deep reasoning
     - Chinese + English bilingual
     - Tool use and function calling
     """
-    
+
     def __init__(self):
         # Prioritize DeepSeek if available, otherwise fallback to Kimi
         if settings.deepseek_api_key:
-            logger.info("Initializing Agent with DeepSeek engine")
-            self.client = OpenAI(
-                api_key=settings.deepseek_api_key,
-                base_url=settings.deepseek_base_url
-            )
+            self.engine = "deepseek"
+            self._api_key = settings.deepseek_api_key
+            self._base_url = settings.deepseek_base_url
             self.model = settings.deepseek_model
         else:
-            logger.info("Initializing Agent with Kimi engine")
-            self.client = OpenAI(
-                api_key=settings.kimi_api_key,
-                base_url=settings.kimi_base_url
-            )
+            self.engine = "kimi"
+            self._api_key = settings.kimi_api_key
+            self._base_url = settings.kimi_base_url
             self.model = settings.kimi_model
+        logger.info(f"Agent configured for the {self.engine} engine ({self.model})")
+
+        # Built on first use. ``OpenAI(api_key=None)`` raises at construction,
+        # and this object is created at import time, so importing this module
+        # -- and everything that imports it, including the orchestrator behind
+        # POST /campaigns and POST /campaigns/{id}/send -- failed on any machine
+        # without a key. That made the documented no-key fallback to canned
+        # responses unreachable.
+        self._client: OpenAI | None = None
+
+    @property
+    def client(self) -> OpenAI:
+        """The provider client; needs a key, so it is only built when one exists."""
+        if self._client is None:
+            if not self._api_key:
+                raise RuntimeError(
+                    "No LLM API key configured. Set DEEPSEEK_API_KEY or KIMI_API_KEY."
+                )
+            self._client = OpenAI(api_key=self._api_key, base_url=self._base_url)
+        return self._client
 
     def _call_kimi(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         temperature: float = 0.7,
         max_tokens: int = 4000,
-        tools: Optional[List[Dict]] = None
-    ) -> Dict[str, Any]:
+        tools: list[dict] | None = None,
+    ) -> dict[str, Any]:
         """Call AI API with retry logic. Mocks responses for demo keys."""
-        
+
         # Check for demo/empty key and return mock response
         # Using a unified check for both keys
         api_key = settings.deepseek_api_key or settings.kimi_api_key
         if not api_key or "test-key" in api_key:
             logger.info("Using MOCK AI response for demo purposes")
             return self._get_mock_response(messages)
-            
+
         try:
             kwargs = {
                 "model": self.model,
                 "messages": messages,
                 "temperature": temperature,
-                "max_tokens": max_tokens
+                "max_tokens": max_tokens,
             }
-            
+
             if tools:
                 kwargs["tools"] = tools
                 kwargs["tool_choice"] = "auto"
-            
+
             response = self.client.chat.completions.create(**kwargs)
-            
+
             return {
                 "content": response.choices[0].message.content,
                 "tool_calls": getattr(response.choices[0].message, "tool_calls", None),
-                "usage": response.usage.model_dump() if response.usage else None
+                "usage": response.usage.model_dump() if response.usage else None,
             }
-            
+
         except Exception as e:
             logger.error(f"Kimi API error: {e}")
             raise
 
-    def _get_mock_response(self, messages: List[Dict[str, str]]) -> Dict[str, Any]:
+    def _get_mock_response(self, messages: list[dict[str, str]]) -> dict[str, Any]:
         """Return simulated AI responses based on message content"""
         user_msg = messages[-1]["content"].lower()
-        
+
         # Mock analysis response
         if "analyze this lead" in user_msg or "identify:" in user_msg:
             content = """
@@ -122,7 +139,7 @@ class KimiAgent:
             }
             ```
             """
-        
+
         # Mock email generation response
         elif "write a hyper-personalized cold outreach email" in user_msg:
             content = """
@@ -141,28 +158,30 @@ class KimiAgent:
             }
             ```
             """
-            
+
         else:
             content = "I am the Kimi Agent. In a real scenario, I would process your request and return a thoughtful response. For this demo, I'm providing this generic confirmation."
-            
+
         return {
             "content": content,
             "tool_calls": None,
-            "usage": {"prompt_tokens": 100, "completion_tokens": 150, "total_tokens": 250}
+            "usage": {"prompt_tokens": 100, "completion_tokens": 150, "total_tokens": 250},
+            # Consumers copy this into their output as generated_by='canned',
+            # so a canned draft is never mistaken for one the model wrote.
+            "mock": True,
         }
 
-    
-    async def analyze_lead_profile(self, lead_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def analyze_lead_profile(self, lead_data: dict[str, Any]) -> dict[str, Any]:
         """
         Deep analysis of lead profile to extract personalization opportunities
-        
+
         Args:
             lead_data: Complete lead information from LinkedIn, company news, etc.
-            
+
         Returns:
             Structured analysis with pain points, interests, trigger events
         """
-        
+
         analysis_prompt = f"""
 You are an expert sales intelligence analyst. Analyze this lead's profile and identify:
 
@@ -186,20 +205,17 @@ Return your analysis as a structured JSON with these exact keys:
 - relevance_score: 0-1 (how relevant our offering is to them)
 - recommended_approach: "value-first" | "problem-solution" | "social-proof" | "educational"
 """
-        
+
         messages = [
             {
                 "role": "system",
-                "content": "You are an expert B2B sales intelligence analyst who identifies personalization opportunities."
+                "content": "You are an expert B2B sales intelligence analyst who identifies personalization opportunities.",
             },
-            {
-                "role": "user",
-                "content": analysis_prompt
-            }
+            {"role": "user", "content": analysis_prompt},
         ]
-        
+
         response = self._call_kimi(messages, temperature=0.3)
-        
+
         try:
             # Extract JSON from response
             content = response["content"]
@@ -207,50 +223,51 @@ Return your analysis as a structured JSON with these exact keys:
                 content = content.split("```json")[1].split("```")[0].strip()
             elif "```" in content:
                 content = content.split("```")[1].split("```")[0].strip()
-            
+
             analysis = json.loads(content)
-            logger.info(f"Lead analysis complete. Relevance score: {analysis.get('relevance_score', 0)}")
+
+            analysis["generated_by"] = "canned" if response.get("mock") else self.model
+            logger.info(
+                f"Lead analysis complete. Relevance score: {analysis.get('relevance_score', 0)}"
+            )
             return analysis
-            
+
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse Kimi response as JSON: {e}")
             # Fallback: return raw response
-            return {
-                "raw_analysis": response["content"],
-                "relevance_score": 0.5
-            }
-    
+            return {"raw_analysis": response["content"], "relevance_score": 0.5}
+
     async def generate_personalized_email(
         self,
-        lead_data: Dict[str, Any],
-        analysis: Dict[str, Any],
+        lead_data: dict[str, Any],
+        analysis: dict[str, Any],
         company_context: str,
         value_proposition: str,
-        email_goal: str = "schedule_call"
-    ) -> Dict[str, Any]:
+        email_goal: str = "schedule_call",
+    ) -> dict[str, Any]:
         """
         Generate hyper-personalized outreach email
-        
+
         Args:
             lead_data: Lead information
             analysis: Output from analyze_lead_profile
             company_context: Your company's value prop
             value_proposition: What you're offering
             email_goal: What action you want them to take
-            
+
         Returns:
             Dict with subject_line, body, personalization_elements
         """
-        
+
         generation_prompt = f"""
 You are an expert B2B copywriter specializing in cold outreach that gets 15-20% response rates.
 
 Write a hyper-personalized cold outreach email using this information:
 
 **Lead Info:**
-- Name: {lead_data.get('name')}
-- Company: {lead_data.get('company')}
-- Role: {lead_data.get('job_title')}
+- Name: {lead_data.get("name")}
+- Company: {lead_data.get("company")}
+- Role: {lead_data.get("job_title")}
 
 **Intelligence:**
 {json.dumps(analysis, indent=2)}
@@ -270,7 +287,7 @@ Write a hyper-personalized cold outreach email using this information:
 3. Lead with VALUE, not your product
 4. Keep it under 150 words
 5. One clear call-to-action
-6. Use their communication style ({analysis.get('communication_style', 'semi-formal')})
+6. Use their communication style ({analysis.get("communication_style", "semi-formal")})
 7. Never sound like a template
 8. Reference something they posted/wrote in the last 2 weeks if available
 
@@ -283,7 +300,7 @@ Return JSON:
   "expected_response_rate": 0.15-0.20
 }}
 """
-        
+
         messages = [
             {
                 "role": "system",
@@ -291,56 +308,54 @@ Return JSON:
 - Get opened because subjects are curiosity-driven and specific
 - Get read because you lead with value
 - Get responses because you show you did research
-- Never sound like marketing spam"""
+- Never sound like marketing spam""",
             },
-            {
-                "role": "user",
-                "content": generation_prompt
-            }
+            {"role": "user", "content": generation_prompt},
         ]
-        
+
         response = self._call_kimi(messages, temperature=0.8)
-        
+
         try:
             content = response["content"]
             if "```json" in content:
                 content = content.split("```json")[1].split("```")[0].strip()
             elif "```" in content:
                 content = content.split("```")[1].split("```")[0].strip()
-            
+
             email_data = json.loads(content)
-            logger.info(f"Email generated. Expected response rate: {email_data.get('expected_response_rate')}")
+
+            email_data["generated_by"] = "canned" if response.get("mock") else self.model
+            logger.info(
+                f"Email generated. Expected response rate: {email_data.get('expected_response_rate')}"
+            )
             return email_data
-            
+
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse email generation response: {e}")
             return {
-                "subject_line": "Quick question about your work at " + lead_data.get('company', ''),
+                "subject_line": "Quick question about your work at " + lead_data.get("company", ""),
                 "email_body": response["content"],
                 "personalization_elements": [],
-                "error": str(e)
+                "error": str(e),
             }
-    
+
     async def generate_ab_variants(
-        self,
-        original_email: Dict[str, Any],
-        lead_data: Dict[str, Any],
-        num_variants: int = 2
-    ) -> List[Dict[str, Any]]:
+        self, original_email: dict[str, Any], lead_data: dict[str, Any], num_variants: int = 2
+    ) -> list[dict[str, Any]]:
         """
         Generate A/B test variants with different approaches
-        
+
         Returns list of variant emails with different messaging strategies
         """
-        
+
         variant_prompt = f"""
 Generate {num_variants} alternative versions of this email with DIFFERENT strategic approaches:
 
 Original Email:
-Subject: {original_email['subject_line']}
-Body: {original_email['email_body']}
+Subject: {original_email["subject_line"]}
+Body: {original_email["email_body"]}
 
-Lead: {lead_data.get('name')} at {lead_data.get('company')}
+Lead: {lead_data.get("name")} at {lead_data.get("company")}
 
 Create variants using these different approaches:
 1. "Problem-Agitation": Start with their pain point, agitate it, then offer solution
@@ -364,62 +379,59 @@ Return JSON array:
   ...
 ]
 """
-        
+
         messages = [
             {
                 "role": "system",
-                "content": "You are an expert at A/B testing different email approaches."
+                "content": "You are an expert at A/B testing different email approaches.",
             },
-            {
-                "role": "user",
-                "content": variant_prompt
-            }
+            {"role": "user", "content": variant_prompt},
         ]
-        
+
         response = self._call_kimi(messages, temperature=0.9)
-        
+
         try:
             content = response["content"]
             if "```json" in content:
                 content = content.split("```json")[1].split("```")[0].strip()
             elif "```" in content:
                 content = content.split("```")[1].split("```")[0].strip()
-            
+
             variants = json.loads(content)
             return variants if isinstance(variants, list) else [variants]
-            
+
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse A/B variants: {e}")
             return []
-    
+
     async def generate_follow_up(
         self,
-        original_email: Dict[str, Any],
+        original_email: dict[str, Any],
         days_since_sent: int,
-        engagement_data: Dict[str, Any],
-        sequence_number: int
-    ) -> Dict[str, Any]:
+        engagement_data: dict[str, Any],
+        sequence_number: int,
+    ) -> dict[str, Any]:
         """
         Generate intelligent follow-up based on engagement
-        
+
         Args:
             original_email: The original email sent
             days_since_sent: How many days since original
-            engagement_data: Did they open? Click? 
+            engagement_data: Did they open? Click?
             sequence_number: 1st follow-up, 2nd, etc.
         """
-        
+
         followup_prompt = f"""
 Generate follow-up email #{sequence_number} for this cold outreach:
 
 Original Email:
-Subject: {original_email['subject_line']}
-Body: {original_email['email_body']}
+Subject: {original_email["subject_line"]}
+Body: {original_email["email_body"]}
 
 Engagement:
 - Days since sent: {days_since_sent}
-- Opened: {engagement_data.get('opened', False)}
-- Clicked: {engagement_data.get('clicked', False)}
+- Opened: {engagement_data.get("opened", False)}
+- Clicked: {engagement_data.get("clicked", False)}
 
 Follow-up Rules:
 1. If they opened but didn't reply: Assume they're interested but busy/forgot
@@ -436,31 +448,25 @@ Return JSON:
   "strategy": "why this follow-up will work"
 }}
 """
-        
+
         messages = [
-            {
-                "role": "system",
-                "content": "You create follow-ups that feel helpful, not pushy."
-            },
-            {
-                "role": "user",
-                "content": followup_prompt
-            }
+            {"role": "system", "content": "You create follow-ups that feel helpful, not pushy."},
+            {"role": "user", "content": followup_prompt},
         ]
-        
+
         response = self._call_kimi(messages, temperature=0.7)
-        
+
         try:
             content = response["content"]
             if "```json" in content:
                 content = content.split("```json")[1].split("```")[0].strip()
-            
+
             return json.loads(content)
-            
+
         except json.JSONDecodeError:
             return {
                 "subject_line": f"Re: {original_email['subject_line']}",
-                "email_body": response["content"]
+                "email_body": response["content"],
             }
 
 

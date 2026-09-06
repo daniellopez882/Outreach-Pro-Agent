@@ -1,5 +1,11 @@
 # 🚀 Quick Start Guide - Personalized Outreach Architect
 
+> **Unverified claims removed.** This document previously stated the system
+> "achieves 15-20% response rates" and processes "10,000+ leads per day".
+> Neither is measured anywhere in this repository, and no campaign has been
+> run with it. See the root README for what is actually verified.
+
+
 ## Get Running in 10 Minutes
 
 ### Step 1: Setup (2 minutes)
@@ -162,11 +168,7 @@ from models import Lead
 from orchestrator import OutreachOrchestrator
 
 # Create mock lead
-lead = Lead(
-    name="Test User",
-    email="test@example.com",
-    company="Test Co"
-)
+lead = Lead(name="Test User", email="test@example.com", company="Test Co")
 
 # Test workflow (will fail at Kimi call but shows structure)
 orchestrator = OutreachOrchestrator(db_session)
@@ -174,9 +176,7 @@ orchestrator = OutreachOrchestrator(db_session)
 # Process lead
 try:
     result = await orchestrator.process_lead(
-        lead=lead,
-        company_context="Test context",
-        value_proposition="Test value"
+        lead=lead, company_context="Test context", value_proposition="Test value"
     )
     print(result)
 except Exception as e:
@@ -254,4 +254,4 @@ Once running:
 - **Questions**: Check `README.md` FAQ section
 - **Customization**: See `ARCHITECTURE.md`
 
-**Ready to get 15-20% response rates!** 🎯
+**Setup complete.**

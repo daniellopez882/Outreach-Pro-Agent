@@ -1,0 +1,26 @@
+[project]
+name = "outreach-architect"
+version = "1.0.0"
+description = "Research-assisted personalisation for cold outreach campaigns."
+requires-python = ">=3.11"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+exclude = [".venv", "venv", "__pycache__"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "C4", "UP", "S", "T20", "RUF"]
+ignore = [
+    "E501",
+    "B008",
+    # StrEnum is 3.11+; the project still targets 3.10.
+    "UP042",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106", "B017"]
+"example_usage.py" = ["T201"]
+
+[tool.ruff.format]
+quote-style = "double"

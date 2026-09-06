@@ -220,9 +220,10 @@ FOR VALUES FROM ('2024-01-01') TO ('2024-04-01');
 from prometheus_client import Counter, Histogram, generate_latest
 
 # Metrics
-email_sent = Counter('emails_sent_total', 'Total emails sent')
-response_rate = Gauge('email_response_rate', 'Current response rate')
-processing_time = Histogram('lead_processing_seconds', 'Lead processing time')
+email_sent = Counter("emails_sent_total", "Total emails sent")
+response_rate = Gauge("email_response_rate", "Current response rate")
+processing_time = Histogram("lead_processing_seconds", "Lead processing time")
+
 
 @app.get("/metrics")
 def metrics():
@@ -305,7 +306,9 @@ def process_lead_batch(lead_ids):
 ```python
 # Cache frequently accessed data
 import redis
-cache = redis.Redis(host='redis', port=6379)
+
+cache = redis.Redis(host="redis", port=6379)
+
 
 @app.get("/leads/{lead_id}")
 def get_lead(lead_id: int):
@@ -313,13 +316,13 @@ def get_lead(lead_id: int):
     cached = cache.get(f"lead:{lead_id}")
     if cached:
         return json.loads(cached)
-    
+
     # Query database
     lead = db.query(Lead).get(lead_id)
-    
+
     # Cache for 1 hour
     cache.setex(f"lead:{lead_id}", 3600, json.dumps(lead.to_dict()))
-    
+
     return lead
 ```
 
